@@ -1,5 +1,6 @@
 "use client"
-
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Package, Coffee, Zap } from 'lucide-react' // Add these to your existing lucide imports
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -13,6 +14,7 @@ interface Product {
   name: string
   price: number
   quantity: number
+  category: string  // Add this line
   timeRestriction?: {
     startTime: string
     endTime: string
@@ -28,6 +30,13 @@ interface CartItem {
   quantity: number
 }
 
+const CATEGORIES = [
+  { value: "chips", label: "Chips & Snacks", icon: Package, color: "bg-orange-100 text-orange-700" },
+  { value: "drinks", label: "Drinks", icon: Coffee, color: "bg-blue-100 text-blue-700" },
+  { value: "candy", label: "Candy & Sweets", icon: Zap, color: "bg-pink-100 text-pink-700" },
+  { value: "other", label: "Other Items", icon: Package, color: "bg-gray-100 text-gray-700" },
+]
+
 export default function SalesPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [cart, setCart] = useState<CartItem[]>([])
@@ -37,6 +46,7 @@ export default function SalesPage() {
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "school-cash">("cash")
   const [isLoading, setIsLoading] = useState(true)
   const [isProcessingSale, setIsProcessingSale] = useState(false)
+  const [activeCategory, setActiveCategory] = useState("all")
 
   useEffect(() => {
     const id = localStorage.getItem("employeeId") || ""
@@ -86,37 +96,38 @@ export default function SalesPage() {
   }
 
   const loadProducts = async () => {
-    try {
-      const { data, error } = await supabase.from("products").select("*").order("name")
+  try {
+    const { data, error } = await supabase.from("products").select("*").order("category, name")
 
-      if (error) throw error
+    if (error) throw error
 
-      const formattedProducts: Product[] = data.map((product) => ({
-        id: product.id,
-        name: product.name,
-        price: product.price,
-        quantity: product.quantity,
-        timeRestriction:
-          product.time_restriction_start && product.time_restriction_end
-            ? {
-                startTime: product.time_restriction_start,
-                endTime: product.time_restriction_end,
-              }
-            : undefined,
-        secondTimeRestriction:
-          product.second_time_restriction_start && product.second_time_restriction_end
-            ? {
-                startTime: product.second_time_restriction_start,
-                endTime: product.second_time_restriction_end,
-              }
-            : undefined,
-      }))
+    const formattedProducts: Product[] = data.map((product) => ({
+      id: product.id,
+      name: product.name,
+      price: product.price,
+      quantity: product.quantity,
+      category: product.category || "other", // Add this line
+      timeRestriction:
+        product.time_restriction_start && product.time_restriction_end
+          ? {
+              startTime: product.time_restriction_start,
+              endTime: product.time_restriction_end,
+            }
+          : undefined,
+      secondTimeRestriction:
+        product.second_time_restriction_start && product.second_time_restriction_end
+          ? {
+              startTime: product.second_time_restriction_start,
+              endTime: product.second_time_restriction_end,
+            }
+          : undefined,
+    }))
 
-      setProducts(formattedProducts)
-    } catch (error) {
-      console.error("Error loading products:", error)
-    }
+    setProducts(formattedProducts)
+  } catch (error) {
+    console.error("Error loading products:", error)
   }
+}
 
   const loadCashRegister = async () => {
     try {
@@ -160,7 +171,19 @@ export default function SalesPage() {
     return firstPeriodAvailable || secondPeriodAvailable
   }
 
+const getFilteredProducts = () => {
   const availableProducts = products.filter((p) => p.quantity > 0)
+  if (activeCategory === "all") return availableProducts
+  return availableProducts.filter((product) => product.category === activeCategory)
+}
+
+const getCategoryStats = (categoryValue: string) => {
+  const categoryProducts = products.filter((p) => p.category === categoryValue && p.quantity > 0)
+  return {
+    total: categoryProducts.length,
+    available: categoryProducts.filter((p) => isProductAvailable(p)).length,
+  }
+}
 
   const addToCart = (product: Product) => {
     const existingItem = cart.find((item) => item.product.id === product.id)
@@ -282,7 +305,7 @@ export default function SalesPage() {
               </Link>
               <div>
                 <h1 className="text-2xl font-bold">Make Sale</h1>
-                <p className="text-teal-100">Process customer purchases</p>
+                <p className="text-teal-100">Process customer purchases by category</p>
               </div>
             </div>
             <div className="text-right">
@@ -297,98 +320,210 @@ export default function SalesPage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Products */}
           <div className="lg:col-span-2">
-            <Card className="border-teal-200">
-              <CardHeader>
-                <CardTitle className="text-slate-800">Available Products</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {availableProducts.length === 0 ? (
-                  <p className="text-slate-500 text-center py-8">No products available for sale at this time.</p>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {products.map((product) => {
-                      const isAvailable = isProductAvailable(product)
-                      const isInStock = product.quantity > 0
-                      const canPurchase = isAvailable && isInStock
+  <Card className="border-teal-200">
+    <CardHeader>
+      <CardTitle className="text-slate-800">Available Products</CardTitle>
+    </CardHeader>
+    <CardContent>
+      <Tabs value={activeCategory} onValueChange={setActiveCategory} className="w-full">
+        <TabsList className="grid w-full grid-cols-5 mb-6">
+          <TabsTrigger value="all" className="flex items-center gap-2">
+            <Package className="h-4 w-4" />
+            All ({products.filter((p) => p.quantity > 0).length})
+          </TabsTrigger>
+          {CATEGORIES.map((category) => {
+            const stats = getCategoryStats(category.value)
+            const Icon = category.icon
+            return (
+              <TabsTrigger key={category.value} value={category.value} className="flex items-center gap-2">
+                <Icon className="h-4 w-4" />
+                {category.label.split(" ")[0]} ({stats.total})
+              </TabsTrigger>
+            )
+          })}
+        </TabsList>
 
-                      return (
-                        <Card
-                          key={product.id}
-                          className={`border-slate-200 transition-all ${
-                            canPurchase ? "hover:border-teal-300" : "opacity-50 bg-slate-50"
-                          }`}
-                        >
-                          <CardContent className="p-4">
-                            <div className="flex justify-between items-start mb-3">
-                              <h3 className={`font-semibold ${canPurchase ? "text-slate-800" : "text-slate-500"}`}>
-                                {product.name}
-                              </h3>
-                              <div className="flex flex-col gap-1">
-                                <Badge variant={product.quantity <= 5 ? "destructive" : "secondary"}>
-                                  {product.quantity} left
-                                </Badge>
-                                {!isAvailable && isInStock && (
-                                  <Badge
-                                    variant="outline"
-                                    className="text-xs bg-amber-50 text-amber-700 border-amber-200"
-                                  >
-                                    Time Restricted
-                                  </Badge>
-                                )}
-                              </div>
-                            </div>
-                            <p className={`text-xl font-bold mb-3 ${canPurchase ? "text-teal-600" : "text-slate-400"}`}>
-                              ${product.price.toFixed(2)}
-                            </p>
-                            {(product.timeRestriction || product.secondTimeRestriction) && (
-                              <div className="mb-3 flex flex-wrap gap-1">
-                                {product.timeRestriction && (
-                                  <Badge
-                                    variant={isAvailable ? "default" : "outline"}
-                                    className={!isAvailable ? "text-slate-500 bg-slate-100" : ""}
-                                  >
-                                    {product.timeRestriction.startTime} - {product.timeRestriction.endTime}
-                                  </Badge>
-                                )}
-                                {product.secondTimeRestriction && (
-                                  <Badge
-                                    variant={isAvailable ? "default" : "outline"}
-                                    className={!isAvailable ? "text-slate-500 bg-slate-100" : ""}
-                                  >
-                                    {product.secondTimeRestriction.startTime} - {product.secondTimeRestriction.endTime}
-                                  </Badge>
-                                )}
-                              </div>
-                            )}
-                            <Button
-                              onClick={() => addToCart(product)}
-                              className={`w-full ${
-                                canPurchase
-                                  ? "bg-teal-600 hover:bg-teal-700"
-                                  : "bg-slate-300 text-slate-500 cursor-not-allowed"
-                              }`}
-                              disabled={
-                                !canPurchase ||
-                                cart.find((item) => item.product.id === product.id)?.quantity >= product.quantity ||
-                                isProcessingSale
-                              }
+        <TabsContent value="all">
+          {getFilteredProducts().length === 0 ? (
+            <p className="text-slate-500 text-center py-8">No products available for sale at this time.</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {getFilteredProducts().map((product) => {
+                const isAvailable = isProductAvailable(product)
+                const canPurchase = isAvailable
+
+                return (
+                  <Card
+                    key={product.id}
+                    className={`border-slate-200 transition-all ${
+                      canPurchase ? "hover:border-teal-300" : "opacity-50 bg-slate-50"
+                    }`}
+                  >
+                    <CardContent className="p-4">
+                      <div className="flex justify-between items-start mb-3">
+                        <div>
+                          <h3 className={`font-semibold ${canPurchase ? "text-slate-800" : "text-slate-500"}`}>
+                            {product.name}
+                          </h3>
+                          <Badge
+                            className={
+                              CATEGORIES.find((c) => c.value === product.category)?.color ||
+                              "bg-gray-100 text-gray-700"
+                            }
+                          >
+                            {CATEGORIES.find((c) => c.value === product.category)?.label || product.category}
+                          </Badge>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <Badge variant={product.quantity <= 5 ? "destructive" : "secondary"}>
+                            {product.quantity} left
+                          </Badge>
+                          {!isAvailable && (
+                            <Badge
+                              variant="outline"
+                              className="text-xs bg-amber-50 text-amber-700 border-amber-200"
                             >
-                              <Plus className="h-4 w-4 mr-2" />
-                              {!isAvailable && isInStock
-                                ? "Not Available Now"
-                                : !isInStock
-                                  ? "Out of Stock"
-                                  : "Add to Cart"}
-                            </Button>
-                          </CardContent>
-                        </Card>
-                      )
-                    })}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
+                              Time Restricted
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                      <p className={`text-xl font-bold mb-3 ${canPurchase ? "text-teal-600" : "text-slate-400"}`}>
+                        ${product.price.toFixed(2)}
+                      </p>
+                      {(product.timeRestriction || product.secondTimeRestriction) && (
+                        <div className="mb-3 flex flex-wrap gap-1">
+                          {product.timeRestriction && (
+                            <Badge
+                              variant={isAvailable ? "default" : "outline"}
+                              className={!isAvailable ? "text-slate-500 bg-slate-100" : ""}
+                            >
+                              {product.timeRestriction.startTime} - {product.timeRestriction.endTime}
+                            </Badge>
+                          )}
+                          {product.secondTimeRestriction && (
+                            <Badge
+                              variant={isAvailable ? "default" : "outline"}
+                              className={!isAvailable ? "text-slate-500 bg-slate-100" : ""}
+                            >
+                              {product.secondTimeRestriction.startTime} - {product.secondTimeRestriction.endTime}
+                            </Badge>
+                          )}
+                        </div>
+                      )}
+                      <Button
+                        onClick={() => addToCart(product)}
+                        className={`w-full ${
+                          canPurchase
+                            ? "bg-teal-600 hover:bg-teal-700"
+                            : "bg-slate-300 text-slate-500 cursor-not-allowed"
+                        }`}
+                        disabled={
+                          !canPurchase ||
+                          cart.find((item) => item.product.id === product.id)?.quantity >= product.quantity ||
+                          isProcessingSale
+                        }
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        {!isAvailable ? "Not Available Now" : "Add to Cart"}
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )
+              })}
+            </div>
+          )}
+        </TabsContent>
+
+        {CATEGORIES.map((category) => (
+          <TabsContent key={category.value} value={category.value}>
+            {getFilteredProducts().length === 0 ? (
+              <p className="text-slate-500 text-center py-8">
+                No {category.label.toLowerCase()} available for sale at this time.
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {getFilteredProducts().map((product) => {
+                  const isAvailable = isProductAvailable(product)
+                  const canPurchase = isAvailable
+
+                  return (
+                    <Card
+                      key={product.id}
+                      className={`border-slate-200 transition-all ${
+                        canPurchase ? "hover:border-teal-300" : "opacity-50 bg-slate-50"
+                      }`}
+                    >
+                      <CardContent className="p-4">
+                        <div className="flex justify-between items-start mb-3">
+                          <h3 className={`font-semibold ${canPurchase ? "text-slate-800" : "text-slate-500"}`}>
+                            {product.name}
+                          </h3>
+                          <div className="flex flex-col gap-1">
+                            <Badge variant={product.quantity <= 5 ? "destructive" : "secondary"}>
+                              {product.quantity} left
+                            </Badge>
+                            {!isAvailable && (
+                              <Badge
+                                variant="outline"
+                                className="text-xs bg-amber-50 text-amber-700 border-amber-200"
+                              >
+                                Time Restricted
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                        <p className={`text-xl font-bold mb-3 ${canPurchase ? "text-teal-600" : "text-slate-400"}`}>
+                          ${product.price.toFixed(2)}
+                        </p>
+                        {(product.timeRestriction || product.secondTimeRestriction) && (
+                          <div className="mb-3 flex flex-wrap gap-1">
+                            {product.timeRestriction && (
+                              <Badge
+                                variant={isAvailable ? "default" : "outline"}
+                                className={!isAvailable ? "text-slate-500 bg-slate-100" : ""}
+                              >
+                                {product.timeRestriction.startTime} - {product.timeRestriction.endTime}
+                              </Badge>
+                            )}
+                            {product.secondTimeRestriction && (
+                              <Badge
+                                variant={isAvailable ? "default" : "outline"}
+                                className={!isAvailable ? "text-slate-500 bg-slate-100" : ""}
+                              >
+                                {product.secondTimeRestriction.startTime} - {product.secondTimeRestriction.endTime}
+                              </Badge>
+                            )}
+                          </div>
+                        )}
+                        <Button
+                          onClick={() => addToCart(product)}
+                          className={`w-full ${
+                            canPurchase
+                              ? "bg-teal-600 hover:bg-teal-700"
+                              : "bg-slate-300 text-slate-500 cursor-not-allowed"
+                          }`}
+                          disabled={
+                            !canPurchase ||
+                            cart.find((item) => item.product.id === product.id)?.quantity >= product.quantity ||
+                            isProcessingSale
+                          }
+                        >
+                          <Plus className="h-4 w-4 mr-2" />
+                          {!isAvailable ? "Not Available Now" : "Add to Cart"}
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  )
+                })}
+              </div>
+            )}
+          </TabsContent>
+        ))}
+      </Tabs>
+    </CardContent>
+  </Card>
+</div>
 
           {/* Cart */}
           <div>
